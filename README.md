@@ -1,3 +1,4 @@
+声明：整个项目都是deepseek写的，上传都是ai搞的，有bug也不定修（
 # MiMoASR —— 小米 MiMo 语音识别桌面工具
 
 基于小米开放平台 **MiMo-V2.5-ASR**（OpenAI API 兼容）的轻量语音识别客户端，支持 VRChat chatbox 发送。
