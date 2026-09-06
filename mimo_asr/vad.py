@@ -1,11 +1,12 @@
 """VAD 持续监听：音量超过阈值开始缓冲，静音超时自动切段。
 
-- 回调线程内做轻量状态机（无锁、无阻塞）
+- 回调线程内做轻量状态机（加锁保护，避免 stop()/切段竞态）
 - 段时长 < min_speech_sec 直接丢弃 —— 过滤咳嗽、清痰等短促非语音
 - 切段后进入短暂冷却，避免尾音余响立刻再触发
 """
 from __future__ import annotations
 
+import threading
 from typing import Callable, List, Optional
 
 import numpy as np
@@ -46,6 +47,7 @@ class VadListener:
         self._last_voice_frame = 0
         self._cooldown_until = 0
         self._voice_frames = 0        # 有效语音帧数（音量≥阈值），用于短音过滤
+        self._lock = threading.Lock() # 保护状态机与 _chunks
 
     @property
     def listening(self) -> bool:
@@ -57,55 +59,62 @@ class VadListener:
         if self.on_level:
             self.on_level(self.level)
 
-        n = self._frame_count
-        self._frame_count += frames
+        finish = False
         sr = self.sample_rate
+        with self._lock:
+            n = self._frame_count
+            self._frame_count += frames
 
-        if self._state == "cooldown":
-            if n >= self._cooldown_until:
-                self._state = "idle"
-            return
+            if self._state == "cooldown":
+                if n >= self._cooldown_until:
+                    self._state = "idle"
+                return
 
-        if self.level >= self.threshold:
-            if self._state == "idle":
-                self._state = "speech"
-                self._chunks = []
-                self._voice_frames = 0
-            self._last_voice_frame = n
-            self._voice_frames += frames
-            self._chunks.append(indata.copy())
-        elif self._state == "speech":
-            if (n - self._last_voice_frame) >= self.silence_timeout * sr:
-                self._finish_segment()
-            else:
-                # 低于阈值但未超时：仍缓冲该帧 —— 保留句尾弱音/音量下降部分的语音，
-                # 避免"最后低于阈值的语音被截断"的问题
+            if self.level >= self.threshold:
+                if self._state == "idle":
+                    self._state = "speech"
+                    self._chunks = []
+                    self._voice_frames = 0
+                self._last_voice_frame = n
+                self._voice_frames += frames
                 self._chunks.append(indata.copy())
+            elif self._state == "speech":
+                if (n - self._last_voice_frame) >= self.silence_timeout * sr:
+                    finish = True
+                else:
+                    # 低于阈值但未超时：仍缓冲该帧 —— 保留句尾弱音/音量下降部分的语音，
+                    # 避免"最后低于阈值的语音被截断"的问题
+                    self._chunks.append(indata.copy())
+
+        if finish:
+            self._finish_segment()
 
     def _finish_segment(self) -> None:
-        self._state = "cooldown"
-        self._cooldown_until = self._frame_count + int(COOLDOWN_SEC * self.sample_rate)
-        chunks, self._chunks = self._chunks, []
-        voice_duration = self._voice_frames / self.sample_rate
-        self._voice_frames = 0
-        if not chunks:
-            return
-        data = np.concatenate(chunks) if len(chunks) > 1 else chunks[0]
-        duration = len(data) / self.sample_rate
-        # 按"有效语音时长"过滤：咳嗽/清痰等有效语音过短，直接丢弃（尾部静音不算）
-        if voice_duration < self.min_speech_sec:
-            return
-        wav = _numpy_to_wav(data, self.sample_rate)
+        with self._lock:
+            self._state = "cooldown"
+            self._cooldown_until = self._frame_count + int(COOLDOWN_SEC * self.sample_rate)
+            chunks, self._chunks = self._chunks, []
+            voice_duration = self._voice_frames / self.sample_rate
+            self._voice_frames = 0
+            if not chunks:
+                return
+            data = np.concatenate(chunks) if len(chunks) > 1 else chunks[0]
+            duration = len(data) / self.sample_rate
+            # 按"有效语音时长"过滤：咳嗽/清痰等有效语音过短，直接丢弃（尾部静音不算）
+            if voice_duration < self.min_speech_sec:
+                return
+            wav = _numpy_to_wav(data, self.sample_rate)
         if self.on_segment:
             self.on_segment(wav, duration)
 
     def start(self) -> None:
         if self.listening:
             return
-        self._chunks = []
-        self._state = "idle"
-        self._frame_count = 0
-        self.level = 0.0
+        with self._lock:
+            self._chunks = []
+            self._state = "idle"
+            self._frame_count = 0
+            self.level = 0.0
         try:
             self._open_stream(self.device)
         except sd.PortAudioError as e:
@@ -141,8 +150,11 @@ class VadListener:
             self._stream.close()
         finally:
             self._stream = None
-        if self._state == "speech":
+        with self._lock:
+            was_speech = self._state == "speech"
+            if not was_speech:
+                self._chunks = []
+        if was_speech:
             self._finish_segment()
-        else:
-            self._chunks = []
-        self._state = "idle"
+        with self._lock:
+            self._state = "idle"

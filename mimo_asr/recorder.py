@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import io
+import threading
 import wave
 from typing import Callable, List, Optional, Tuple
 
@@ -64,6 +65,7 @@ class Recorder:
         self.level = 0.0                  # 最新音量，UI 可轮询读取
         self._stream: Optional[sd.InputStream] = None
         self._chunks: List[np.ndarray] = []
+        self._lock = threading.Lock()   # 保护 _chunks，避免音频线程/主线程竞争
 
     @property
     def recording(self) -> bool:
@@ -75,7 +77,8 @@ class Recorder:
         self.level = min(1.0, rms / 32768.0)
         if self.on_level:
             self.on_level(self.level)
-        self._chunks.append(indata.copy())
+        with self._lock:
+            self._chunks.append(indata.copy())
 
     def start(self) -> None:
         if self.recording:
@@ -118,10 +121,11 @@ class Recorder:
         finally:
             self._stream = None
 
-        if not self._chunks:
-            return None
-        data = np.concatenate(self._chunks) if len(self._chunks) > 1 else self._chunks[0]
-        self._chunks = []
+        with self._lock:
+            if not self._chunks:
+                return None
+            data = np.concatenate(self._chunks) if len(self._chunks) > 1 else self._chunks[0]
+            self._chunks = []
         wav = _numpy_to_wav(data, self.sample_rate)
         if self.on_audio:
             self.on_audio(wav)

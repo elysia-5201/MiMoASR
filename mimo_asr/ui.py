@@ -27,6 +27,7 @@ MIME_MAP = {
     ".aac": "audio/aac", ".flac": "audio/flac", ".ogg": "audio/ogg",
     ".opus": "audio/ogg", ".webm": "audio/webm", ".wma": "audio/x-ms-wma",
 }
+MAX_FILE_SIZE = 25 * 1024 * 1024  # 25MB，防止超大文件占满内存/请求超时
 LANGUAGES = ["auto", "zh", "en", "ja", "ko", "ru", "fr", "de", "es"]
 
 IDLE_TEXT = "🎙 按住录音（点击开始/停止）" if os.name == "nt" else "🎙 录音"
@@ -378,6 +379,17 @@ class App:
             return
         ext = os.path.splitext(path)[1].lower()
         mime = MIME_MAP.get(ext, "audio/wav")
+        try:
+            size = os.path.getsize(path)
+        except OSError as e:
+            messagebox.showerror("读取失败", str(e))
+            return
+        if size > MAX_FILE_SIZE:
+            messagebox.showerror(
+                "文件过大",
+                f"文件超过 {MAX_FILE_SIZE // (1024 * 1024)}MB，请选择更小的音频文件",
+            )
+            return
         try:
             with open(path, "rb") as f:
                 data = f.read()

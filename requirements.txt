@@ -1,3 +1,4 @@
-sounddevice>=0.5
-numpy>=1.26
-requests>=2.31
+# 固定版本以保证可复现构建；升级时请显式修改并重新测试。
+sounddevice==0.5.1
+numpy==1.26.4
+requests==2.32.3

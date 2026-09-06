@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import json
 import time
+from urllib.parse import urlparse
 from typing import Optional, Tuple
 
 import requests
@@ -24,6 +25,26 @@ class AsrError(Exception):
 
 def _to_data_url(audio_bytes: bytes, mime: str) -> str:
     return f"data:{mime};base64,{base64.b64encode(audio_bytes).decode('ascii')}"
+
+
+# 官方接口域名；为避免 API Key 被发往任意第三方，HTTPS 也仅允许该域名。
+ALLOWED_BASE_URL_HOSTS = {"api.xiaomimimo.com"}
+LOCAL_TEST_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def _validate_base_url(base_url: str) -> None:
+    """强制 HTTPS 且仅允许官方域名；本地 mock 测试可使用 http://127.0.0.1。"""
+    if not base_url:
+        raise AsrError("base_url 未配置")
+    parsed = urlparse(base_url)
+    if not parsed.scheme or not parsed.hostname:
+        raise AsrError(f"base_url 格式不正确：{base_url[:80]}")
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https":
+        if host not in LOCAL_TEST_HOSTS:
+            raise AsrError("base_url 必须使用 HTTPS（本地测试可使用 http://127.0.0.1）")
+    elif host not in ALLOWED_BASE_URL_HOSTS:
+        raise AsrError("base_url 仅允许官方域名 api.xiaomimimo.com")
 
 
 def recognize(
@@ -45,6 +66,7 @@ def recognize(
     api_key = (api_key or "").strip()
     if not api_key:
         raise AsrError("未设置 API Key，请在界面上填写或设置环境变量 MIMO_API_KEY")
+    _validate_base_url(base_url)
 
     messages = [
         {

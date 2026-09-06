@@ -128,7 +128,7 @@ def test_filter_noise():
     assert filter_noise_text("你好世界") == "你好世界"
     assert filter_noise_text("hello world") == "hello world"
     assert filter_noise_text(" 好的 ") == "好的"
-    for bad in ["", "   ", "。。。", "。。。,!", "嗯", "嗯嗯", "咳咳", "啊", "哦哦","1."
+    for bad in ["", "   ", "。。。", "。。。,!", "嗯", "嗯嗯", "咳咳", "啊", "哦哦", "1.",
                 "emmm", "uh", "hmm", "emm", "哼"]:
         assert filter_noise_text(bad) is None, f"应过滤: {bad!r}"
     assert filter_noise_text("嗯 好的") is not None  # 有实义内容保留

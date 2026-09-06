@@ -19,7 +19,7 @@
 2. 在控制台创建 API Key（或充值/领取 Token Plan）
 3. 填入程序设置框，或设置环境变量 `MIMO_API_KEY`
 
-> API Key 仅保存在本机 `%APPDATA%\MiMoASR\config.json`，不会上传到别处。
+> API Key 仅保存在本机 `%APPDATA%\MiMoASR\config.json`（Windows 下使用 DPAPI 加密存储），不会上传到别处。
 
 ## 使用说明
 
@@ -105,7 +105,8 @@ MiMoASR/
 
 | 键 | 默认 | 说明 |
 |---|---|---|
-| `api_key` | "" | 小米开放平台 API Key |
+| `api_key` | "" | 小米开放平台 API Key（Windows 下 DPAPI 加密存储） |
+| `base_url` | 官方接口 | 仅允许官方域名 HTTPS；本地测试可临时用 http://127.0.0.1 |
 | `language` | "auto" | 识别语言（auto/zh/en/ja/ko...） |
 | `input_device` | "" | 麦克风标识 `hostapi:设备名`，空 = 默认 |
 | `vad_threshold` | 0.02 | 自动识别触发阈值（0~1），音量条上拖动设置 |
